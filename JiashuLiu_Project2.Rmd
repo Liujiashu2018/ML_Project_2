@@ -1,0 +1,217 @@
+---
+title: "Final Project"
+author: "Jiashu Liu"
+output: 
+  pdf_document
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(factoextra)
+library(GGally)
+library(MASS)
+library(fpc)
+library(caret)
+library(palmerpenguins)
+library(foreign)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(NeuralNetTools)
+library(randomForest)
+library(readstata13)
+if(!require(parttree)) remotes::install_github("grantmcdermott/parttree")
+library(parttree)
+
+olive<-load("/Users/jiashuliu/Desktop/ML/Project2/Project2.Rsav") #change path as needed
+```
+
+For this project, we use a subset of features from a famous olive oil dataset. The features I've chosen are not as predictive as the ones that I've excluded.
+
+Features are acid measurements: palmitic, palmitol, stearic, linoleni, arachidi (you will see quite quickly that they vary somewhat in variability) These oils are classifiable into three macro-areas (variable name region): North, South, Sardinia
+
+We have pre-split the data into: training (70%) and testing (30%). You will use the `caret` program to set tuning parameters.
+
+## SVM
+
+### Problem: Linear Kernel
+
+We will compare and contrast svm fits using raw measures.
+
+0.  set.seed(2011001)
+1.  Run use the caret function to train a svm using 10-fold cross-validation, with the following formula: `region~.`, first with the linear kernel (in caret, use svmLinear2 method). Remember to specify 10-fold cv in the `trControl` (do not set repeats).
+2.  Refit the best model using `svm` so that it is easier to visualize
+3.  Visualize using plot on the final model chosen by each set of runs, using columns palmitic (x) and arachidi (y) for the plot, with slice set to the means of each of the remaining 3 features.
+4.  Predict on the TEST data. Examine accuracy and confusion matrices for this run.
+
+```{r svm-1}
+set.seed(2011001)
+trControl <- trainControl(method = "cv", number = 10, search = "grid")
+svm.model <- caret::train(region~., data=training, method = "svmLinear2", metric = "Accuracy", trControl = trControl)
+svm.model
+svm.best<-svm(region~., data=training, kernel = "linear", cost=0.5)
+svm.best
+plot(svm.best, training, formula = arachidi~palmitic, slice = list(stearic = mean(training$stearic), linoleni = mean(training$linoleni), palmitol = mean(training$palmitol)))
+svm.class<-predict(svm.best, testing)
+confusionMatrix(svm.class, testing$region)
+confusionMatrix(svm.class, testing$region)$overall["Accuracy"]
+```
+
+### Problem: Radial Kernel
+
+Repeat the 5 steps above with the radial kernel (caret's svmRadial method).
+
+```{r svm-2}
+set.seed(2011001)
+trControl <- trainControl(method = "cv", number = 10, search = "grid")
+svm.modelR <- caret::train(region~., data=training, method = "svmRadial", metric = "Accuracy", trControl = trControl)
+svm.modelR
+svm.best.r<-svm(region~., data=training, kernel = "radial", cost=1)
+svm.best.r
+plot(svm.best.r, training, formula = arachidi~palmitic, slice = list(stearic = mean(training$stearic), linoleni = mean(training$linoleni), palmitol = mean(training$palmitol)))
+svm.class.r<-predict(svm.best.r, testing)
+confusionMatrix(svm.class.r, testing$region)
+confusionMatrix(svm.class.r, testing$region)$overall["Accuracy"]
+```
+
+### Quiz: all questions refer to performance on the test data
+
+-   Which kernel had better overall accuracy?
+
+Radial kernel had better overall accuracy. 
+
+-   Which region r is hardest to classify (using either kernel)? I.e., for which r is P(Prediction=r\|Region=r) smallest (use TEST data results)?
+
+The results show that North is the hardest to classify no matter which kernel we use. Because the North has the lowest sensitivity using either kernel. 
+
+-   Name there region that is better classified using the linear kernel?
+
+Sardinia is better classified using the linear kernel according to the confusion matrix. When using the linear svm, we only predicted one case in Sardinia wrong, but we made two mistakes when using the radial kernel.
+
+-   The regions are different colored Xs and Os on the plot. Do they seem 'clumped' in a strongly curvilinear way?
+
+The Xs and Os colored in green and pink are clumped in a curvilinear way. However, the Xs and Os in black is only clumped but don't seemingly not in a curvilinear way. 
+
+## Regression Trees
+
+### Problem: rpart
+
+We will use `rpart` to build a regression tree for this classification problem. Later, we will use random forests.
+
+0.  set.seed(2011001)
+1.  Run use the caret function to train rpart with the following formula: `region~.`. In caret, use the rpart2 method. Remember to specify 10-fold cv in the `trControl` (do not set repeats).
+2.  You will find the best model is the list element `finalModel` in the result of train.
+3.  Visualize this best model using `rpart.plot`. Be prepared to describe this model in the questions that follow.
+4.  Predict on the TEST data. Examine accuracy and confusion matrices for this run.
+
+```{r rpart-1}
+set.seed(2011001)
+trControl <- trainControl(method = "cv", number = 10, search = "grid")
+rpart <- caret::train(region~., data=training, method = "rpart2", metric = "Accuracy", trControl = trControl)
+rpart.plot(rpart$finalModel)
+rpart.pred<-predict(rpart, testing)
+confusionMatrix(rpart.pred, testing$region)
+```
+
+### Quiz:
+
+-   Which region was hardest to classify? I.e., for which r is P(Prediction=r\|Region=r) smallest (use TEST data results)?
+
+Northe is the hardest region to classify. 
+
+-   Our classifier tells us our oil is from region r. For which region r will we be least sure that the oil is truly from that region (use test data performance)?
+
+According to the confusion matrix, we will be least sure about the Sardinia region. If we look at the second row of the confusion matrix, we will find that we are 27/(27+4+9) = 67.5% correct on making prediction on Sardinia, which is the lowest among the three regions. 
+
+-   Which acid seems the most important (predictive) feature (look at tree from training)?
+
+Palmitic is the most important feature. 
+
+-   Given palmitic=1000, palmitol=100, stearic=200, linoleni=40, arachidi=60, what region would you say the oil is from?
+
+I would say that the oil is from the South. 
+
+-   What is the probability that you are wrong about your anwer to the last question (based on the tree and training data)?
+
+Probability that I was wrong: 1-0.67 = 0.33
+
+### Problem: randomForest
+
+We will use `randomForest` to build a regression tree for this classification problem.
+
+0.  set.seed(2011001)
+1.  Run use the caret function to train rpart with the following formula: `region~.`. In caret, use the rf method. Remember to specify 10-fold cv in the `trControl` (do not set repeats). Be sure to set `importance=TRUE` so that you can do (3), below. THIS MAY BE A BIT SLOW. BE PATIENT.
+2.  You will find the best model is the list element `finalModel` in the result of train.
+3.  `treesize` is a function that takes a randomForest object and return the number of nodes in each tree in the ensemble. Compute the average tree size.
+4.  Use the `varImpPlot` function to determine which variables are most predictive of each of the three regions (so three plots). Use parameter `type=1`, which gives the Mean Decrease Accuracy (%). Be prepared to discuss.
+5.  Predict on the TEST data. Examine accuracy and confusion matrices for this run.
+
+```{r rf-1}
+set.seed(2011001)
+trControl <- trainControl(method = "cv", number = 10, search = "grid")
+rf.model <- caret::train(region~., data=training, method = "rf", metric = "Accuracy", trControl = trControl, importance=TRUE)
+mean(treesize(rf.model$finalModel))
+rf.model$results
+print(rf.model)
+```
+```{r}
+par(mfrow = c(1, 3))
+olive.class<-attr(training$region, "levels")
+for(i in 1:3){
+  varImpPlot(rf.model$finalModel, type=1, class = olive.class[i], main = "rf Final Model", sub = "Mean Decrease Accuracy")
+}
+```
+```{r}
+rf.pred<-predict(rf.model, testing)
+confusionMatrix(rf.pred, testing$region)
+```
+
+### Quiz:
+
+-   What is the overall accuracy of this method, and how much larger is it than that for rpart?
+
+Overall Accuracy:
+0.9353 (rf) -  0.8471 (rpart) = 0.0882 
+
+-   Based on the plots, performance tables and other calculations, what accounts for this great improvement?
+
+The overall accuracy is higher using random forest and the prediction for South and North is improved. 
+
+I think the reason why Random Forest improves the overall performance is that the random forest algorithm builds multiple decision trees for prediction. It compiles the results from all the decision trees and then generate the final outcome. In contrast, rpart builds only one tree. 
+
+-   Which acid seems the most important for South (look at importance plots)?
+
+Palmitic seems to be the most important for South. 
+
+-   Is the most important feature (for two of the three regions) the one deemed most predictive by rpart?
+
+Palmitic is the most important feature. It's not that obvious using the rmd dataset so we double checked our results by using the shiny app, and finally get the same answer. 
+
+-   In this random forests approach, is there a single tree that you can plug the values: palmitic=1000, palmitol=100, stearic=200, linoleni=40, arachidi=60 into to predict region? If not, how does the prediction get made?
+
+No, there's not a single decision tree. Since the random forest algorithm generates multiple decision trees at once and the classifiers are chosen randomly, we will get different prediction result for each tree. 
+
+-   What is the average number of nodes in the trees in your best model's ensemble of trees?
+
+The average number of nodes is 28. 
+
+```{r}
+# set.seed(2011001)
+# rf.model2 <- randomForest(region~.,data=training,mtry=2)
+# mean(treesize(rf.model2))
+```
+
+
+
+
+
+
+
+
+
