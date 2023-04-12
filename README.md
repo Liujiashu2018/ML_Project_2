@@ -1,4 +1,4 @@
-# ML_Project_2
+# Machine Learning Project
 
 For this project, we use a subset of features from a famous olive oil dataset. The features I've chosen are not as predictive as the ones that I've excluded.
 
